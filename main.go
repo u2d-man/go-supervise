@@ -37,17 +37,37 @@ func main() {
 			dir = v
 		}
 	}
-
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	runPath := filepath.Join(absDir, "run.bat")
+	runPath := filepath.Join(absDir, "run")
 	fmt.Println(runPath)
 
+	fifoPath, err := ensureControlFIFO(absDir)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	cmdCh := make(chan byte, 16)
+	go readControlLoop(fifoPath, cmdCh, quit)
+
 	state := State{}
+	state.superviseLoop(runPath, dir, quit)
+}
+
+func ensureControlFIFO(serviceDir string) (path string, err error) {
+	return serviceDir, nil
+}
+
+func readControlLoop(fifoPath string, ch chan<- byte, quit <-chan struct{}) error {
+	return nil
+}
+
+func (s *State) superviseLoop(runPath string, dir string, quit <-chan struct{}) error {
 	for {
 		cmd := exec.Command(runPath)
 		cmd.Dir = dir
@@ -55,14 +75,13 @@ func main() {
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		err = cmd.Start()
+		err := cmd.Start()
 		if err != nil {
-			fmt.Println(err)
-			return
+			return err
 		}
 
-		state.start(cmd.Process.Pid, time.Now())
-		fmt.Println(&state)
+		s.start(cmd.Process.Pid, time.Now())
+		fmt.Println(&s)
 
 		done := make(chan error, 1)
 		go func() {
@@ -71,7 +90,7 @@ func main() {
 
 		select {
 		case err := <-done:
-			state.stop()
+			s.stop()
 			if err != nil {
 				var exitErr *exec.ExitError
 				if errors.As(err, &exitErr) {
@@ -81,7 +100,7 @@ func main() {
 			fmt.Println("end child process")
 		case <-quit:
 			cmd.Wait()
-			return
+			return nil
 		}
 	}
 }
